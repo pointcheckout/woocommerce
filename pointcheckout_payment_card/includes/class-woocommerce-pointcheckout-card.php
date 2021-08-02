@@ -36,7 +36,6 @@ class WC_Gateway_PointCheckout_Card extends PointCheckout_Card_Parent
 
         // Actions
         add_action('woocommerce_receipt_' . $this->id, array($this, 'receipt_page'));
-        add_action('wp_enqueue_scripts', array($this, 'payment_scripts'));
 
         // Save options
         add_action('woocommerce_update_options_payment_gateways_' . $this->id, array($this, 'process_admin_options'));
@@ -52,7 +51,6 @@ class WC_Gateway_PointCheckout_Card extends PointCheckout_Card_Parent
         update_option('woocommerce_pointcheckout_card_settings', apply_filters('woocommerce_settings_api_sanitized_fields_pointcheckout_card', $settings));
         return $result;
     }
-
 
     public function is_available()
     {
@@ -82,9 +80,9 @@ class WC_Gateway_PointCheckout_Card extends PointCheckout_Card_Parent
             $valid = false;
             if(WC()->customer != null) {
                 $billingCountry = WC()->customer->get_billing_country();
-
-                if (!$billingCountry == null) {
-                    foreach ($this->config->getSpecificCountries() as $country) {
+                $specfiedCountries = $this->config->getSpecificCountries();
+                if (!$billingCountry == null && !empty($specfiedCountries) && is_array($specfiedCountries)) {
+                    foreach ($specfiedCountries as $country) {
                         if ($country == $billingCountry) {
                             $valid = true;
                         }
@@ -280,7 +278,7 @@ class WC_Gateway_PointCheckout_Card extends PointCheckout_Card_Parent
             $this->pcUtils->log('Failed to initiate card payment using PointCheckout, message : ' . $response->error);
         }
 
-        $note = $this->paymentService->getOrderHistoryMessage($form['response']->result->id, 0, $form['response']->result->status, '');
+        $note = $this->paymentService->getOrderHistoryMessage($response->result->id, 0, $response->result->status, '');
         $order->add_order_note($note);
 
         if ($response->success == 'true') {
@@ -308,7 +306,7 @@ class WC_Gateway_PointCheckout_Card extends PointCheckout_Card_Parent
             WC()->session->set('refresh_totals', true);
             $redirectUrl = $this->get_return_url($order);
         } else {
-            $redirectUrl = esc_url($woocommerce->cart->get_checkout_url());
+            $redirectUrl = esc_url(wc_get_checkout_url());
             $order->cancel_order();
         }
         echo '<script>window.top.location.href = "' . $redirectUrl . '"</script>';

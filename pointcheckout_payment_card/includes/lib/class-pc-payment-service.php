@@ -1,5 +1,5 @@
 <?php
-define("PC_EXT_VERSION", "WooCommerce-Card-2.0.5");
+define("PC_CARD_EXT_VERSION", "WooCommerce-Card-2.0.6");
 
 class PointCheckout_Card_Payment extends PointCheckout_Card_Parent
 {
@@ -35,7 +35,7 @@ class PointCheckout_Card_Payment extends PointCheckout_Card_Parent
         $params = array(
             'transactionId' => $orderId,
         );
-        $params["extVersion"] = PC_EXT_VERSION;
+        $params["extVersion"] = PC_CARD_EXT_VERSION;
         try{
             $params["ecommerce"]= 'WordPress ' . $this->get_wp_version() . ', WooCommerce ' . $this->wpbo_get_woo_version_number();
         } catch (\Throwable $e) {
@@ -65,6 +65,10 @@ class PointCheckout_Card_Payment extends PointCheckout_Card_Parent
         $params['tax'] = $this->pcOrder->getTaxAmount();
         $params['shipping'] = $this->pcOrder->getShippingAmount();
         $params['subtotal'] = $this->pcOrder->getSubtotal();
+        if(!$params['subtotal'] || $params['subtotal'] <= 0) {
+            $params['subtotal'] =  $this->pcOrder->getTotal();
+        }
+
         $params['discount'] = $this->pcOrder->getDiscountAmount();
         $params['currency'] = $this->pcOrder->getCurrencyCode();
         $params['paymentMethods'] = ["CARD"];
