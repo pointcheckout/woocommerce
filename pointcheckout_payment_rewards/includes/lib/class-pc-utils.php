@@ -49,11 +49,11 @@ class PointCheckout_Rewards_Utils extends PointCheckout_Rewards_Parent
     public function getApiBaseUrl()
     {
         if ($this->pcConfig->isLiveMode()) {
-            return 'https://api.pointcheckout.com/mer/v1.2/checkouts/';
+            return 'https://api.pointcheckout.com/mer/v2.0/';
         } elseif ($this->pcConfig->isStagingMode()) {
-            return 'https://api.staging.pointcheckout.com/mer/v1.2/checkouts/';
+            return 'https://api.staging.pointcheckout.com/mer/v2.0/';
         } else {
-            return 'https://api.test.pointcheckout.com/mer/v1.2/checkouts/';
+            return 'https://api.test.pointcheckout.com/mer/v2.0/';
         }
     }
 

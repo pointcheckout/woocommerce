@@ -1,5 +1,5 @@
 <?php
-define("PC_CARD_EXT_VERSION", "WooCommerce-Card-2.0.6");
+define('PC_CARD_EXT_VERSION', 'WooCommerce-Card-2.1.0');
 
 class PointCheckout_Card_Payment extends PointCheckout_Card_Parent
 {
@@ -32,15 +32,36 @@ class PointCheckout_Card_Payment extends PointCheckout_Card_Parent
         $this->pcOrder->loadOrder($orderId);
         $order->update_status($this->pcConfig->getNewOrderStatus());
 
+        // ORDER INFO
         $params = array(
-            'transactionId' => $orderId,
+            'requestId' => $orderId,
+            'orderId' =>  $orderId,
+            'extVersion' => PC_CARD_EXT_VERSION
         );
-        $params["extVersion"] = PC_CARD_EXT_VERSION;
         try{
-            $params["ecommerce"]= 'WordPress ' . $this->get_wp_version() . ', WooCommerce ' . $this->wpbo_get_woo_version_number();
+            $params['ecommerce']= 'WordPress ' . $this->get_wp_version() . ', WooCommerce ' . $this->wpbo_get_woo_version_number();
         } catch (\Throwable $e) {
             // NOTHING TO DO 
         }
+
+        $params['allowedPaymentMethods'] = ['CARD'];
+        $params['returnUrl'] = get_site_url() . '?wc-api=wc_gateway_pointcheckout_card_process_response';
+
+
+        // CURRENCY AND AMOUNT
+        $params['currency'] = $this->pcOrder->getCurrencyCode();
+        $params['amount'] = $this->pcOrder->getTotal();
+
+        // TOTALS
+        $totals = array();
+        $totals['subtotal'] = $this->pcOrder->getSubtotal();
+        $totals['tax'] = $this->pcOrder->getTaxAmount();
+        $totals['shipping'] = $this->pcOrder->getShippingAmount();
+        $totals['discount'] = $this->pcOrder->getDiscountAmount();
+        if(!$totals['subtotal'] || $totals['subtotal'] <= 0) {
+            $totals['subtotal'] =  $this->pcOrder->getTotal();
+        }
+        $params['totals'] = $totals;
 
         $cartItems = $order->get_items();
         $items = array();
@@ -52,7 +73,7 @@ class PointCheckout_Card_Payment extends PointCheckout_Card_Parent
                 'sku' => $product->get_sku(),
                 'quantity' => $item_data->get_quantity(),
                 'type' => $product->get_type(),
-                'total' => $item_data->get_total()
+                'linetotal' => $item_data->get_total()
             );
             //in case of bundles the bundle group item total is set to zero here to prevent conflict in totals
             if ($product->get_type() == 'bundle') {
@@ -61,18 +82,6 @@ class PointCheckout_Card_Payment extends PointCheckout_Card_Parent
             $items[$i++] = $item;
         }
         $params['items'] = array_values($items);
-        $params['amount'] = $this->pcOrder->getTotal();
-        $params['tax'] = $this->pcOrder->getTaxAmount();
-        $params['shipping'] = $this->pcOrder->getShippingAmount();
-        $params['subtotal'] = $this->pcOrder->getSubtotal();
-        if(!$params['subtotal'] || $params['subtotal'] <= 0) {
-            $params['subtotal'] =  $this->pcOrder->getTotal();
-        }
-
-        $params['discount'] = $this->pcOrder->getDiscountAmount();
-        $params['currency'] = $this->pcOrder->getCurrencyCode();
-        $params['paymentMethods'] = ["CARD"];
-        $params['resultUrl'] = get_site_url() . "?wc-api=wc_gateway_pointcheckout_card_process_response";
 
         // CUSTOMER
         $customer = array();
@@ -83,6 +92,7 @@ class PointCheckout_Card_Payment extends PointCheckout_Card_Parent
         $customer['lastName'] = $order->get_billing_last_name();
         $customer['email'] = $order->get_billing_email();
         $customer['phone'] = $order->get_billing_phone();
+        $params['customer'] = $customer;
 
         // BILLING ADDRESS
         $billingAddress = array();
@@ -92,19 +102,19 @@ class PointCheckout_Card_Payment extends PointCheckout_Card_Parent
         $billingAddress['city'] = $order->get_billing_city();
         $billingAddress['state'] = $order->get_billing_state();
         $billingAddress['country'] = $order->get_billing_country();
-        $customer['billingAddress'] = $billingAddress;
+        $params['billingAddress'] = $billingAddress;
 
-        // SHIPPING ADDRESS
-        $shippingAddress = array();
-        $shippingAddress['name'] = $order->get_shipping_first_name() . ' ' . $order->get_shipping_last_name();
-        $shippingAddress['address1'] = $order->get_shipping_address_1();
-        $shippingAddress['address2'] = $order->get_shipping_address_2();
-        $shippingAddress['city'] = $order->get_shipping_city();
-        $shippingAddress['country'] = $order->get_shipping_country();
-        $shippingAddress['state'] = $order->get_shipping_state();
-        $customer['shippingAddress'] = $shippingAddress;
-
-        $params['customer'] = $customer;
+        // DELIVERY ADDRESS
+        if(!empty($order->get_shipping_country()) && !empty($order->get_shipping_first_name())) {
+            $shippingAddress = array();
+            $shippingAddress['name'] = $order->get_shipping_first_name() . ' ' . $order->get_shipping_last_name();
+            $shippingAddress['address1'] = $order->get_shipping_address_1();
+            $shippingAddress['address2'] = $order->get_shipping_address_2();
+            $shippingAddress['city'] = $order->get_shipping_city();
+            $shippingAddress['country'] = $order->get_shipping_country();
+            $shippingAddress['state'] = $order->get_shipping_state();
+            $params['deliveryAddress'] = $shippingAddress;
+        }
 
         return $params;
     }
@@ -126,14 +136,14 @@ class PointCheckout_Card_Payment extends PointCheckout_Card_Parent
 
     public function postCheckout($paymentRequestParams)
     {
-        return $this->pcUtils->apiCall("", $paymentRequestParams);
+        return $this->pcUtils->apiCall('checkout/web', $paymentRequestParams);
     }
 
 
     public function getCheckout()
     {
         WC()->session->set('pointCheckoutCurrentOrderId', $_REQUEST['reference']);
-        return $this->pcUtils->apiCall($_REQUEST['checkout'], null);
+        return $this->pcUtils->apiCall('checkout/' . $_REQUEST['checkout'], null);
     }
 
 
@@ -146,9 +156,9 @@ class PointCheckout_Card_Payment extends PointCheckout_Card_Parent
 
 
             if (!$response->success) {
-                $order->update_status('canceled');
+                $order->cancel_order();
                 $errorMsg = isset($response->error) ? $response->error : 'connecting to pointcheckout failed';
-                $note = __("[ERROR] order canceled  :" . $errorMsg);
+                $note = __('[ERROR] order canceled  :' . $errorMsg);
                 // Add the note
                 $order->add_order_note($note);
                 // Save the data
@@ -164,8 +174,7 @@ class PointCheckout_Card_Payment extends PointCheckout_Card_Parent
 
 
             if ($response->success && $result->status != 'PAID') {
-
-                $order->update_status('canceled');
+                $order->cancel_order();
                 $note = __($this->getOrderHistoryMessage($result->id, 0, $result->status, $result->currency));
                 // Add the note
                 $order->add_order_note($note);
@@ -202,9 +211,9 @@ class PointCheckout_Card_Payment extends PointCheckout_Card_Parent
             default:
                 $color = 'style="color:red;"';
         }
-        $message = 'PointCheckout Status: <b ' . $color . '>' . $orderStatus . '</b><br/>PointCheckout Transaction ID: <a href="' . $this->pcUtils->getAdminUrl() . '/merchant/transactions/' . $checkout . '/read " target="_blank"><b>' . $checkout . '</b></a>' . "\n";
+        $message = 'PointCheckout Status: <b ' . $color . '>' . $orderStatus . '</b><br/>PointCheckout Transaction ID: <a href="' . $this->pcUtils->getAdminUrl() . '/merchant/transactions/' . $checkout . '/read " target="_blank"><b>' . $checkout . '</b></a>' . '\n';
         if ($codAmount > 0) {
-            $message .= '<b style="color:red;">[NOTICE] </b><i>COD Amount: <b>' . $codAmount . ' ' . $this->session->data['currency'] . '</b></i>' . "\n";
+            $message .= '<b style="color:red;">[NOTICE] </b><i>COD Amount: <b>' . $codAmount . ' ' . $this->session->data['currency'] . '</b></i>' . '\n';
         }
         return $message;
     }
